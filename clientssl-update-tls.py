@@ -2,19 +2,30 @@ import requests
 import json
 import sys
 import base64
+import time
+import os
 
-os_host = "10.145.73.123"
-os_project_id = "e04af77e23be443989be14e22240ea75"
-os_username = "admin"
-os_password = "f543e5c237e54891"
-listener_id = "56e0b93c-0485-4695-8614-d643bc800238"
-bigip_credential = "admin:admin"
-bigip_host = "10.145.68.11"
+# os_host = "10.145.73.123"
+# os_project_id = "e04af77e23be443989be14e22240ea75"
+# os_username = "admin"
+# os_password = "f543e5c237e54891"
+# listener_id = "56e0b93c-0485-4695-8614-d643bc800238"
+# bigip_credential = "admin:admin"
+# bigip_host = "10.145.68.11"
+
+os_host = os.environ['OS_HOST']
+os_project_id = os.environ['OS_PROJECT_ID']
+os_username = os.environ['OS_USERNAME']
+os_password = os.environ['OS_PASSWORD']
+listener_id = os.environ['LISTENER_ID']
+bigip_credential = os.environ['BIGIP_CREDENTIAL']
+bigip_host = os.environ['BIGIP_HOST']
 
 # the least container count for later tests
 least_container_num = 3
-
 authed_token = None
+
+# ============================= functions =============================
 
 def auth_token():
     global authed_token
@@ -72,7 +83,7 @@ def get_listener(listener_id):
     try:
         response = requests.request("GET", listener_url, headers=headers, data = payload)
         if int(response.status_code / 200) == 1:
-            print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))
         else:
             print("failed to get listeners: %d, %s" % (response.status_code, response.text.encode('utf-8')))
@@ -92,7 +103,7 @@ def get_secret_containers():
     try:
         response = requests.request("GET", container_url, headers=headers, data = payload)
         if int(response.status_code / 200) == 1:
-            print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))
         else:
             print("failed to get containers: %d, %s" % (response.status_code, response.text.encode('utf-8')))
@@ -119,7 +130,7 @@ def update_listener_with_tls(listener_id, default_tls_container_id, sni_containe
     try:
         response = requests.request("PUT", tls_update_url, headers=headers, data = payload_data)
         if int(response.status_code / 200) == 1:
-            print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))
         else:
             print("failed to update listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
@@ -142,7 +153,7 @@ def get_bigip_profiles(listener_id):
         response = requests.request("GET", profiles_url, verify=False, headers=headers, data = payload)
         
         if int(response.status_code / 200) == 1:
-            print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))['items']
         else:
             print("failed to update listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
@@ -182,8 +193,37 @@ def check_listener_with_tls(listener_id, def_tls, sni_tls):
         sni_tls_id  =n.split('/')[-1]
         if not id_found(sni_tls_id):
             raise Exception("sni  tls  id  %s cannot  be  found  in profiles: %s"%(sni_tls_id, profiles))
-    
 
+def get_loadbalancer(loadbalancer_id):
+    lb_url = "http://%s:9696/v2.0/lbaas/loadbalancers/%s" % (os_host, loadbalancer_id)
+
+    payload  = {}
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Auth-Token': authed_token
+    }
+
+    try:
+        response = requests.request("GET", lb_url, headers=headers, data = payload)
+        
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return json.loads(response.text.encode('utf8'))
+        else:
+            print("failed to get listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception  as e:
+        raise e
+
+def wait_for_loadbalancer_updated(loadbalancer_id):
+    max_times = 10
+    while max_times > 0:
+        lb = get_loadbalancer(loadbalancer_id)
+        if lb['loadbalancer']['provisioning_status'].startswith("PENDING_"):
+            max_times -= 1
+            time.sleep(1)
+        else:
+            break
 
 
 # ============================= main logic =============================
@@ -191,11 +231,9 @@ def check_listener_with_tls(listener_id, def_tls, sni_tls):
 auth_token()
 
 containers = get_secret_containers()
-
 if containers['total'] < least_container_num:
     print("cannot going forwards for tests: %d containers" % containers['total'])
     sys.exit(1)
-
 containers = {
     'A': containers['containers'][0]['container_ref'],
     'B': containers['containers'][1]['container_ref'],
@@ -208,20 +246,23 @@ containers = {
 #   ..., "A B", "C B", ... means: change default_tls_container_id from A to C, and keep sni_container_refs unchanged.
 
 tests = [
-    "A", "B", "A", "A B", "C B", "A B", "A C", "A B", "A B C", "A B", "C"
+    "A", "B", "A", "A B", "C B", "A B", "A C", "A B C", "A B", "C"
 ]
 
 tls = tests[0].split(' ')
 def_tls = containers[tls[0]]
 sni_tls = [containers[n] for n in tls[1:]]
 ls = update_listener_with_tls(listener_id, def_tls, sni_tls, name=tests[0])
+print("listener after update: %s" % json.dumps(ls))
+wait_for_loadbalancer_updated(ls['listener']['loadbalancers'][0]['id'])
 check_listener_with_tls(listener_id, def_tls, sni_tls)
 
 for t in tests[1:]:
-    print(t)
+    print("-> %s" % t)
     tls = t.split(' ')
     def_tls = containers[tls[0]]
     sni_tls = [containers[n] for n in tls[1:]]
     ls = update_listener_with_tls(listener_id, def_tls, sni_tls, name=t)
+    wait_for_loadbalancer_updated(ls['listener']['loadbalancers'][0]['id'])
     check_listener_with_tls(listener_id, def_tls, sni_tls)
 

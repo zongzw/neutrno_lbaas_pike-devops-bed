@@ -13,6 +13,7 @@ import os
 # bigip_credential = "admin:admin"
 # bigip_host = "10.145.68.11"
 
+# OS_HOST=10.145.73.123 OS_PROJECT_ID=e04af77e23be443989be14e22240ea75 OS_USERNAME=admin OS_PASSWORD=f543e5c237e54891 LISTENER_ID=56e0b93c-0485-4695-8614-d643bc800238 BIGIP_CREDENTIAL=admin:admin BIGIP_HOST=10.145.68.11 
 os_host = os.environ['OS_HOST']
 os_project_id = os.environ['OS_PROJECT_ID']
 os_username = os.environ['OS_USERNAME']
@@ -24,6 +25,8 @@ bigip_host = os.environ['BIGIP_HOST']
 # the least container count for later tests
 least_container_num = 3
 authed_token = None
+timestamp = int(time.time())
+http_profile_name = "http_profile_%d" % timestamp
 
 # ============================= functions =============================
 
@@ -86,7 +89,7 @@ def get_listener(listener_id):
             # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))
         else:
-            print("failed to get listeners: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            print("failed to get listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
             sys.exit(1)
     except Exception as e:
         raise e
@@ -156,14 +159,16 @@ def get_bigip_profiles(listener_id):
             # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))['items']
         else:
-            print("failed to update listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            print("failed to get bigip profiles: %d, %s" % (response.status_code, response.text.encode('utf-8')))
             sys.exit(1)
     except Exception  as e:
         raise e
 
-def check_listener_with_tls(listener_id, def_tls, sni_tls):
+def check_listener_with_tls_http_profile(listener_id, def_tls, sni_tls, http_profile):
     
     listener = get_listener(listener_id)
+    print("got listener: %s" % listener)
+
     if listener['listener']['default_tls_container_ref'] != def_tls:
         raise Exception("listener default_tls_container_ref doesn't match!")
     
@@ -176,7 +181,7 @@ def check_listener_with_tls(listener_id, def_tls, sni_tls):
         return n['context'] == 'clientside'
     ssl_profiles = filter(is_ssl_profile, profiles)
     
-    if len([def_tls] +sni_tls) != len(ssl_profiles):
+    if len(set([def_tls] + sni_tls)) != len(ssl_profiles):
         raise Exception("The length of ssl profiles doesn't match.")
 
     def id_found(id):
@@ -194,6 +199,10 @@ def check_listener_with_tls(listener_id, def_tls, sni_tls):
         if not id_found(sni_tls_id):
             raise Exception("sni  tls  id  %s cannot  be  found  in profiles: %s"%(sni_tls_id, profiles))
 
+    fullPaths = [n['fullPath'] for n in profiles]
+    if not http_profile['fullPath'] in fullPaths:
+        raise Exception("http profile %s cannot be found in profiles: %s" % (http_profile, profiles))
+
 def get_loadbalancer(loadbalancer_id):
     lb_url = "http://%s:9696/v2.0/lbaas/loadbalancers/%s" % (os_host, loadbalancer_id)
 
@@ -210,7 +219,7 @@ def get_loadbalancer(loadbalancer_id):
             # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
             return json.loads(response.text.encode('utf8'))
         else:
-            print("failed to get listener: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            print("failed to get loadbalancer: %d, %s" % (response.status_code, response.text.encode('utf-8')))
             sys.exit(1)
     except Exception  as e:
         raise e
@@ -225,10 +234,140 @@ def wait_for_loadbalancer_updated(loadbalancer_id):
         else:
             break
 
+def create_http_profile(name):
+    authorization = "%s" % base64.b64encode(bigip_credential)
+
+    http_profile_url = "https://%s/mgmt/tm/ltm/profile/http" % bigip_host
+
+    payload = {
+        "name": name,
+        "description": "http profile for test."
+    }
+    headers = {
+        'content-type': 'application/json',
+        'Authorization': 'Basic %s' % authorization
+    }
+    payload_data = json.dumps(payload)
+
+    try:
+        response = requests.request("POST", http_profile_url, verify=False, headers=headers, data = payload_data)
+        
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return json.loads(response.text.encode('utf8'))
+        else:
+            print("failed to create http profile: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception  as e:
+        raise e
+
+def get_bigip_virtual(listener_id):
+    authorization = "%s" % base64.b64encode(bigip_credential)
+
+    virtual_url = "https://%s/mgmt/tm/ltm/virtual/~Project_%s~Project_%s?expandSubcollections=true" % (bigip_host, os_project_id, listener_id)
+
+    payload = {}
+    headers = {
+        'content-type': 'application/json',
+        'Authorization': 'Basic %s' % authorization
+    }
+
+    try:
+        response = requests.request("GET", virtual_url, verify=False, headers=headers, data = payload)
+        
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return json.loads(response.text.encode('utf8'))
+        else:
+            print("failed to get bigip virtual: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception  as e:
+        raise e
+
+def bind_new_http_profile_to_listener(listener_id):
+    http_profile = create_http_profile(http_profile_name)
+    virtual = get_bigip_virtual(listener_id)
+
+    profiles = virtual['profilesReference']['items']
+    for n in profiles:
+        if n['nameReference']['link'].find("ltm/profile/http") != -1:
+            profiles.remove(n)
+    virtual['profilesReference']['items'].append(http_profile)
+
+    authorization = "%s" % base64.b64encode(bigip_credential)
+    virtual_url = "https://%s/mgmt/tm/ltm/virtual/~Project_%s~Project_%s" % (bigip_host, os_project_id, listener_id)
+
+    headers = {
+        'content-type': 'application/json',
+        'Authorization': 'Basic %s' % authorization
+    }
+    payload_data = json.dumps(virtual)
+
+    try:
+        response = requests.request("PATCH", virtual_url, verify=False, headers=headers, data = payload_data)
+        
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return http_profile
+        else:
+            print("failed to update listener for profile binding: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception  as e:
+        raise e
+
+def get_subnet_id(subnet_name):
+    subnet_url = "http://%s:9696/v2.0/subnets?fields=id&name=private_subnet" % os_host
+
+    payload = {}
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Auth-Token': authed_token
+    }
+    payload_data = json.dumps(payload)
+
+    try:
+        response = requests.request("GET", subnet_url, headers=headers, data = payload_data)
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return json.loads(response.text.encode('utf8'))['subnets'][0]['id']
+        else:
+            print("failed to get subnet id: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception as e:
+        raise e
+
+def create_loadbalancer():
+    lb_create_url = "http://%s:9696/v2.0/lbaas/loadbalancers" % os_host
+
+    payload = {
+        "loadbalancer": {
+            "vip_subnet_id": get_subnet_id("private_subnet"), 
+            "name": "lb-%d" % timestamp, 
+            "admin_state_up": True
+        }
+    }
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Auth-Token': authed_token
+    }
+    payload_data = json.dumps(payload)
+
+    try:
+        response = requests.request("POST", lb_create_url, headers=headers, data = payload_data)
+        if int(response.status_code / 200) == 1:
+            # print(json.dumps(json.loads(response.text.encode('utf8')), indent=2))
+            return json.loads(response.text.encode('utf8'))
+        else:
+            print("failed to create loadbalancer: %d, %s" % (response.status_code, response.text.encode('utf-8')))
+            sys.exit(1)
+    except Exception as e:
+        raise e
+
 
 # ============================= main logic =============================
 
 auth_token()
+# lb = create_loadbalancer()
 
 containers = get_secret_containers()
 if containers['total'] < least_container_num:
@@ -246,8 +385,10 @@ containers = {
 #   ..., "A B", "C B", ... means: change default_tls_container_id from A to C, and keep sni_container_refs unchanged.
 
 tests = [
-    "A", "B", "A", "A B", "C B", "A B", "A C", "A B C", "A B", "C"
+    "A A", "B", "A", "A B", "C B", "A B", "A C", "A B C", "A B", "C"
 ]
+
+http_profile = bind_new_http_profile_to_listener(listener_id)
 
 tls = tests[0].split(' ')
 def_tls = containers[tls[0]]
@@ -255,7 +396,7 @@ sni_tls = [containers[n] for n in tls[1:]]
 ls = update_listener_with_tls(listener_id, def_tls, sni_tls, name=tests[0])
 print("listener after update: %s" % json.dumps(ls))
 wait_for_loadbalancer_updated(ls['listener']['loadbalancers'][0]['id'])
-check_listener_with_tls(listener_id, def_tls, sni_tls)
+check_listener_with_tls_http_profile(listener_id, def_tls, sni_tls, http_profile)
 
 for t in tests[1:]:
     print("-> %s" % t)
@@ -264,5 +405,4 @@ for t in tests[1:]:
     sni_tls = [containers[n] for n in tls[1:]]
     ls = update_listener_with_tls(listener_id, def_tls, sni_tls, name=t)
     wait_for_loadbalancer_updated(ls['listener']['loadbalancers'][0]['id'])
-    check_listener_with_tls(listener_id, def_tls, sni_tls)
-
+    check_listener_with_tls_http_profile(listener_id, def_tls, sni_tls, http_profile)

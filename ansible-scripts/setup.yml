@@ -128,6 +128,9 @@
           --os-neutron-ml2-tenant-network-types=vlan \
           --os-neutron-ml2-vlan-ranges=extnet:{{ vlan_range }} \
           --mariadb-pw=mariadb_password \
+          --provision-demo=n \
+          --os-neutron-ovs-bridge-interfaces=br-ex:em1 \
+          --keystone-admin-passwd=admin \
           --allinone
     
     - name: packstack install rdo pike

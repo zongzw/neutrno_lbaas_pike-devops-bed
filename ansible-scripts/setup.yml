@@ -111,10 +111,11 @@
         src: environment.j2
         dest: /etc/environment
 
-    - name: generate packstack answer fire
+    - name: generate packstack answer file
       shell: |
         packstack \
           --gen-answer-file /root/packstack-answerfile.txt \
+          \
           --os-glance-install=y \
           --os-cinder-install=n \
           --os-manila-install=n \
@@ -124,14 +125,25 @@
           --os-trove-install=n \
           --os-ironic-install=n \
           --os-neutron-lbaas-install=y \
+          --provision-demo=n \
+          --provision-tempest=n \
+          \
+          --keystone-admin-passwd=admin \
+          --mariadb-pw=mariadb_password \
+          \
           --os-neutron-ml2-type-drivers=vlan,flat \
           --os-neutron-ml2-tenant-network-types=vlan \
           --os-neutron-ml2-vlan-ranges=extnet:{{ vlan_range }} \
-          --mariadb-pw=mariadb_password \
+          --os-neutron-ovs-bridge-mappings=extnet:br-ex \
+          --os-neutron-ovs-bridge-interfaces=br-ex:em1 \
+          --os-neutron-ovs-bridges-compute=br-ex \
+          \
+          --ntp-servers=0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org \
+          \
           --allinone
     
-    - name: packstack install rdo pike
-      shell: |
-        packstack --debug --answer-file /root/packstack-answerfile.txt --timeout 600
-      environment: "{{ proxy_env }}"
+    # - name: packstack install rdo pike
+    #   shell: |
+    #     packstack --debug --answer-file /root/packstack-answerfile.txt --timeout 600
+    #   environment: "{{ proxy_env }}"
       

@@ -27,4 +27,5 @@ sudo packstack \
   --os-trove-install=n \
   --os-ironic-install=n \
   --os-neutron-lbaas-install=y \
+  --mariadb-pw=mariadb_password \
   --allinone

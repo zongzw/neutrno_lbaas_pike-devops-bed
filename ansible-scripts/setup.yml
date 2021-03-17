@@ -1,0 +1,137 @@
+---
+
+- hosts: servers
+  gather_facts: no
+  remote_user: root
+  vars:
+    proxy_env:
+        http_proxy: http://10.250.64.99:3128
+        https_proxy: http://10.250.64.99:3128
+        HTTP_PROXY: http://10.250.64.99:3128
+        HTTPS_PROXY: http://10.250.64.99:3128
+  tasks:
+
+  # install OS
+  #   refer to IPMI installation guide
+
+  # setup network
+  #   vi /etc/sysconfig/network-scripts/ifcfg-em1
+      # TYPE=Ethernet
+      # PROXY_METHOD=none
+      # BROWSER_ONLY=no
+      # BOOTPROTO=static        dhcp -> static
+      # DEFROUTE=yes
+      # IPV4_FAILURE_FATAL=no
+      # IPV6INIT=yes
+      # IPV6_AUTOCONF=yes
+      # IPV6_DEFROUTE=yes
+      # IPV6_FAILURE_FATAL=no
+      # IPV6_ADDR_GEN_MODE=stable-privacy
+      # NAME=em1
+      # UUID=d30d5277-7acd-41b2-b7e0-e3fd535d5e53
+      # DEVICE=em1
+      # ONBOOT=yes              no -> yes
+      # IPADDR=10.250.11.111    -> added
+      # NETMASK=255.255.255.0   -> added
+      # GATEWAY=10.250.11.1     -> added
+  #   systemctl restart network
+  
+  # reconfigure sshd
+  #   vi /etc/ssh/sshd_config
+      # PermitRootLogin yes
+      # UseDNS no
+      # PasswordAuthentication yes
+  #   systemctl restart sshd
+
+  # setup password-less
+  #   ssh-copy-id root@10.250.11.111
+
+    - name: check reachability
+      ping:
+    
+    - name: set nameserver to {{ nameserver }}
+      template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+
+    - name: set deltarpm=0 in /etc/yum.conf
+      blockinfile:
+        path: /etc/yum.conf
+        block: deltarpm=0
+
+    - name: verify yum packages installed
+      yum:
+        name:
+          - vim
+          - git
+          - tree
+          - curl
+          - wget
+          - tcpdump
+          - yum-utils
+          - https://repos.fedorapeople.org/repos/openstack/EOL/openstack-pike/rdo-release-pike-1.noarch.rpm
+        state: present
+      environment: "{{ proxy_env }}"
+
+    - name: configure openstack-pike.baseurl
+      shell: |
+        yum-config-manager --quiet --save --setopt=openstack-pike.baseurl=http://vault.centos.org/7.6.1810/cloud/x86_64/openstack-pike/
+    
+    # use command 'yum --enablerepo=openstack-pike clean metadata' to clean metadata if this step always fails
+    - name: install openstack packstack and dependencies
+      yum:
+        name:
+          - openstack-packstack
+          - python-pip
+          - qemu-kvm
+          - libvirt
+          - libvirt-client
+          - virt-install
+        state: present
+      environment: "{{ proxy_env }}"
+
+    - name: stop useless services
+      systemd:
+        state: stopped
+        name: "{{ item }}"
+      with_items:
+        - firewalld
+        - NetworkManager
+  
+    - name: start necessary services
+      systemd:
+        state: restarted
+        name: "{{ item }}"
+      with_items:
+        - network
+        - libvirtd
+
+    - name: set environment LANG
+      template:
+        src: environment.j2
+        dest: /etc/environment
+
+    - name: generate packstack answer fire
+      shell: |
+        packstack \
+          --gen-answer-file /root/packstack-answerfile.txt \
+          --os-glance-install=y \
+          --os-cinder-install=n \
+          --os-manila-install=n \
+          --os-swift-install=n \
+          --os-ceilometer-install=n \
+          --os-sahara-install=n \
+          --os-trove-install=n \
+          --os-ironic-install=n \
+          --os-neutron-lbaas-install=y \
+          --os-neutron-ml2-type-drivers=vlan,flat \
+          --os-neutron-ml2-tenant-network-types=vlan \
+          --os-neutron-ml2-vlan-ranges=extnet:{{ vlan_range }} \
+          --mariadb-pw=mariadb_password \
+          --allinone
+    
+    - name: packstack install rdo pike
+      shell: |
+        packstack --debug --answer-file /root/packstack-answerfile.txt --timeout 600
+      environment: "{{ proxy_env }}"
+      

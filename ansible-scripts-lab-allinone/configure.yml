@@ -11,7 +11,7 @@
       shell: |
         source {{ openrc }} && openstack project list
       
-    - name: create image
+    - name: create necessary images: centos7 bigip
 
 
           # --provision-image-name=CentOS-7-x86_64-GenericCloud-1802.qcow2 \

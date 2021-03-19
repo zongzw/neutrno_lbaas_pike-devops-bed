@@ -5,10 +5,10 @@
   remote_user: root
   vars:
     proxy_env:
-        http_proxy: http://10.250.64.99:3128
-        https_proxy: http://10.250.64.99:3128
-        HTTP_PROXY: http://10.250.64.99:3128
-        HTTPS_PROXY: http://10.250.64.99:3128
+        # http_proxy: http://10.250.64.99:3128
+        # https_proxy: http://10.250.64.99:3128
+        # HTTP_PROXY: http://10.250.64.99:3128
+        # HTTPS_PROXY: http://10.250.64.99:3128
   tasks:
 
   # install OS
@@ -51,7 +51,7 @@
     
     - name: set nameserver to {{ nameserver }}
       template:
-        src: resolv.conf.j2
+        src: templates/resolv.conf.j2
         dest: /etc/resolv.conf
 
     - name: set deltarpm=0 in /etc/yum.conf
@@ -108,7 +108,7 @@
 
     - name: set environment LANG
       template:
-        src: environment.j2
+        src: templates/environment.j2
         dest: /etc/environment
 
     - name: generate packstack answer file

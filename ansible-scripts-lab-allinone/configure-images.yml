@@ -1,0 +1,58 @@
+---
+
+- hosts: servers
+  gather_facts: false
+  remote_user: root
+  tasks:
+    - name: define image list
+      set_fact:
+        images: 
+          - name: cirros-0.3.5-x86_64-disk.img
+            url: http://10.250.11.185/images/cirros-0.3.5-x86_64-disk.img
+            dest: /root/cirros-0.3.5-x86_64-disk.img
+          - name: CentOS-7-x86_64-GenericCloud-1802.qcow2
+            url: http://10.250.11.185/images/CentOS-7-x86_64-GenericCloud-1802.qcow2
+            dest: /root/CentOS-7-x86_64-GenericCloud-1802.qcow2
+          - name: BIGIP-15.0.1-0.0.11.qcow2
+            url: http://10.250.11.185/images/BIGIP-15.0.1-0.0.11.qcow2
+            dest: /root/BIGIP-15.0.1-0.0.11.qcow2
+
+    # ansible-galaxy collection install openstack.cloud
+    # error "To utilize this module, the installed version of the openstacksdk library MUST be >=0.12."
+    # pike's version 0.9.17-1.el7
+    # - name: create openstack images
+    #   openstack.cloud.image:
+    #     auth:
+    #       auth_url: http://{{ inventory_hostname }}:5000/v3
+    #       username: admin
+    #       password: admin
+    #       project_name: admin
+    #       openstack.cloud.identity_user_domain_name: Default
+    #       openstack.cloud.project_domain_name: Default
+    #     name: "{{ item['name'] }}"
+    #     container_format: bare
+    #     disk_format: qcow2
+    #     state: present
+    #     filename: "{{ item['dest'] }}"
+    #   with_items: "{{ images }}"
+    #   loop_control:
+    #     label: "{{ item['name'] }}"
+
+    - name: download images
+      get_url:
+        url: "{{ item['url'] }}"
+        dest: "{{ item['dest'] }}"
+      with_items: "{{ images }}"
+      loop_control:
+        label: "{{ item['name'] }}"
+
+    - name: "create necessary images"
+      shell: |
+        source {{ openrc }}
+        openstack image show {{ item['name'] }}
+        if [ $? -ne 0 ]; then
+          openstack image create --container-format bare --disk-format qcow2 --file {{ item['dest'] }} --public {{ item['name'] }}
+        fi
+      with_items: "{{ images }}"
+      loop_control:
+        label: "{{ item['name'] }}"

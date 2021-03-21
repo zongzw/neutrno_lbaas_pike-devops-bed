@@ -4,11 +4,11 @@
   gather_facts: no
   remote_user: root
   vars:
-    proxy_env:
-        # http_proxy: http://10.250.64.99:3128
-        # https_proxy: http://10.250.64.99:3128
-        # HTTP_PROXY: http://10.250.64.99:3128
-        # HTTPS_PROXY: http://10.250.64.99:3128
+    # proxy_env:
+    #     http_proxy: http://10.250.64.99:3128
+    #     https_proxy: http://10.250.64.99:3128
+    #     HTTP_PROXY: http://10.250.64.99:3128
+    #     HTTPS_PROXY: http://10.250.64.99:3128
   tasks:
 
   # install OS
@@ -48,11 +48,32 @@
 
     - name: check reachability
       ping:
-    
-    - name: set nameserver to {{ nameserver }}
+
+    - name: update system configurations
       template:
-        src: templates/resolv.conf.j2
-        dest: /etc/resolv.conf
+        src: templates/{{ item[0] }}
+        dest: "{{ item[1] }}"
+      with_list:
+        - ['bonding.conf.j2', '/etc/modprobe.d/bonding.conf']
+        - ['ifcfg-bond0.j2', '/etc/sysconfig/network-scripts/ifcfg-bond0']
+        - ['environment.j2', '/etc/environment']
+        - ['resolv.conf.j2', '/etc/resolv.conf']
+        - ['ifcfg-p3p1.j2', '/etc/sysconfig/network-scripts/ifcfg-p3p1']
+        - ['ifcfg-p3p2.j2', '/etc/sysconfig/network-scripts/ifcfg-p3p2']
+      loop_control:
+        label: "{{ item[1] }}"
+
+    - name: remote test interface bond0.*
+      shell: rm -f /etc/sysconfig/network-scripts/ifcfg-bond0.*
+      args:
+        warn: no
+    # why it doesn't work on with_fileglob - /etc/sysconfig/network-scripts/ifcfg-bond0.* ??!!
+    # - name: remove test interfaces bond0.*
+    #   file:
+    #     state: absent
+    #     path: "{{ item }}"
+    #   with_fileglob:
+    #     - /etc/sysconfig/network-scripts/ifcfg-bond0.*
 
     - name: set deltarpm=0 in /etc/yum.conf
       blockinfile:
@@ -69,9 +90,10 @@
           - wget
           - tcpdump
           - yum-utils
+          - screen
           - https://repos.fedorapeople.org/repos/openstack/EOL/openstack-pike/rdo-release-pike-1.noarch.rpm
         state: present
-      environment: "{{ proxy_env }}"
+      environment: "{{ proxy_env | default({}) }}"
 
     - name: configure openstack-pike.baseurl
       shell: |
@@ -88,7 +110,7 @@
           - libvirt-client
           - virt-install
         state: present
-      environment: "{{ proxy_env }}"
+      environment: "{{ proxy_env | default({}) }}"
 
     - name: stop useless services
       systemd:
@@ -97,7 +119,7 @@
       with_items:
         - firewalld
         - NetworkManager
-  
+
     - name: start necessary services
       systemd:
         state: restarted
@@ -105,12 +127,7 @@
       with_items:
         - network
         - libvirtd
-
-    - name: set environment LANG
-      template:
-        src: templates/environment.j2
-        dest: /etc/environment
-
+    
     - name: generate packstack answer file
       shell: |
         packstack \
@@ -131,19 +148,20 @@
           --keystone-admin-passwd=admin \
           --mariadb-pw=mariadb_password \
           \
-          --os-neutron-ml2-type-drivers=vlan,flat \
-          --os-neutron-ml2-tenant-network-types=vlan \
-          --os-neutron-ml2-vlan-ranges=extnet:{{ vlan_range }} \
-          --os-neutron-ovs-bridge-mappings=extnet:br-ex \
-          --os-neutron-ovs-bridge-interfaces=br-ex:em1 \
-          --os-neutron-ovs-bridges-compute=br-ex \
+          --os-neutron-ml2-type-drivers=vxlan,vlan,flat \
+          --os-neutron-ml2-tenant-network-types=vlan,vxlan \
+          --os-neutron-ml2-vlan-ranges=vlannet:{{ vlan_range }} \
+          \
+          --os-neutron-ovs-bridge-mappings=extnet:br-ex,vlannet:br-vlan \
+          --os-neutron-ovs-bridge-interfaces=br-ex:em1,br-vlan:bond0 \
+          --os-neutron-ovs-bridges-compute=br-ex,br-vlan \
           \
           --ntp-servers=0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org \
           \
           --allinone
+
+    - name: packstack install rdo pike
+      shell: |
+        packstack --debug --answer-file /root/packstack-answerfile.txt --timeout 600
+      environment: "{{ proxy_env | default({}) }}"
     
-    # - name: packstack install rdo pike
-    #   shell: |
-    #     packstack --debug --answer-file /root/packstack-answerfile.txt --timeout 600
-    #   environment: "{{ proxy_env }}"
-      

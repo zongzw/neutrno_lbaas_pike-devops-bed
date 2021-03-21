@@ -1,0 +1,32 @@
+---
+
+- hosts: servers
+  gather_facts: false
+  remote_user: root
+  tasks:
+    - name: define vlan list
+      set_fact:
+        vlans:
+          10.250.11.111: "{{ range(70, 75, 1) | list }}"
+          10.250.11.113: "{{ range(75, 80, 1) | list }}"
+          10.250.11.115: "{{ range(80, 85, 1) | list }}"
+          10.250.11.116: "{{ range(85, 90, 1) | list }}"
+          10.250.11.117: "{{ range(90, 95, 1) | list }}"
+    
+    - name: create vlan networks
+      shell: |
+        source {{ openrc }} 
+        neutron net-show net-vlan-{{ item }}
+        if [ $? -ne 0 ]; then
+          neutron net-create --provider:network_type vlan --provider:physical_network vlannet --provider:segmentation_id {{ item }} net-vlan-{{ item }}
+        fi
+      with_items: "{{ vlans[inventory_hostname] }}"
+
+    - name: create vlan subnets
+      shell: |
+        source {{ openrc }} 
+        neutron subnet-show subnet-vlan-{{ item }}
+        if [ $? -ne 0 ]; then
+          neutron subnet-create --name subnet-vlan-{{ item }} net-vlan-{{ item }} 10.250.{{item}}.0/24
+        fi
+      with_items: "{{ vlans[inventory_hostname] }}"

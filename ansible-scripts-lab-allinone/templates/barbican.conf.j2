@@ -1,0 +1,63 @@
+[DEFAULT]
+sql_connection = mysql+pymysql://barbican:{{ barbican_db_password }}@{{ inventory_hostname }}/barbican
+db_auto_create = False
+transport_url=rabbit://guest:guest@{{ inventory_hostname }}:5672/
+
+[certificate]
+
+[certificate_event]
+
+[cors]
+
+[crypto]
+
+[dogtag_plugin]
+
+[keystone_authtoken]
+
+auth_uri = http://{{ inventory_hostname }}:5000
+auth_url = http://{{ inventory_hostname }}:35357
+memcached_servers = {{ inventory_hostname }}:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = services
+username = barbican
+password = {{ barbican_user_password }}
+
+[keystone_notifications]
+
+[kmip_plugin]
+
+[matchmaker_redis]
+
+[oslo_messaging_amqp]
+
+
+[oslo_messaging_kafka]
+
+[oslo_messaging_notifications]
+
+[oslo_messaging_rabbit]
+
+[oslo_messaging_zmq]
+
+[oslo_middleware]
+
+[oslo_policy]
+
+[p11_crypto_plugin]
+
+[queue]
+
+[quotas]
+
+[retry_scheduler]
+
+[secretstore]
+
+[simple_crypto_plugin]
+
+[snakeoil_ca_plugin]
+
+[ssl]

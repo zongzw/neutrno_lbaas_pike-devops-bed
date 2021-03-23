@@ -1,0 +1,111 @@
+---
+
+- hosts: servers
+  gather_facts: false
+  remote_user: root
+  vars:
+    proxy_env:
+      http_proxy: http://10.250.64.100:3128
+      https_proxy: http://10.250.64.100:3128
+      HTTP_PROXY: http://10.250.64.100:3128
+      HTTPS_PROXY: http://10.250.64.100:3128
+  tasks:
+    - name: test reachability
+      ping:
+    
+    - name: set necessary variables
+      set_fact:
+        mariadb_password: mariadb_password
+        barbican_db_password: barbican_password
+        barbican_user_password: barbican_password
+    
+    - name: create barbican database
+      mysql_db:
+        name: barbican
+        login_user: root
+        login_password: "{{ mariadb_password }}"
+        login_host: localhost
+        state: present
+      delegate_to: "{{ inventory_hostname }}"
+    
+    - name: set user privileges
+      mysql_user:
+        login_user: root
+        login_password: "{{ mariadb_password }}"
+        login_host: localhost
+        user: barbican
+        password: "{{ barbican_db_password }}"
+        state: present
+        priv: 'barbican.*:ALL'
+        host: "{{ item }}"
+      with_items:
+        - localhost
+        - '%'
+      delegate_to: "{{ inventory_hostname }}"
+
+    # # ansible-galaxy collection install openstack.cloud
+    # # To utilize this module, the installed version of the openstacksdk library MUST be >=0.12.
+    # - name: create openstack barbican user
+    #   openstack.cloud.identity_user:
+    #     auth:
+    #       auth_url: http://{{ inventory_hostname }}:5000/v3
+    #       username: admin
+    #       password: admin
+    #       project_name: admin
+    #       openstack.cloud.identity_user_domain_name: Default
+    #       openstack.cloud.project_domain_name: Default
+    #     name: barbican
+    #     password: "{{ barbican_user_password }}"
+
+    - name: create openstack barbican user and role
+      shell: |
+        source {{ openrc }}
+        openstack user create --domain default --password {{ barbican_user_password }} --or-show barbican
+        openstack role add --project services --user barbican admin
+        openstack role create creator --or-show
+        openstack role add --project services --user barbican creator
+    
+    - name: create openstack barbican service and endpoint
+      shell: |
+        source {{ openrc }}
+        openstack service list | grep "key-manager"
+        if [ $? -ne 0 ]; then
+            openstack service create --name barbican --description "Key Manager" key-manager
+        fi
+
+        openstack endpoint list | grep key-manager
+        if [ $? -ne 0 ]; then
+            openstack endpoint create --region RegionOne key-manager public http://{{ inventory_hostname }}:9311
+            openstack endpoint create --region RegionOne key-manager internal http://{{ inventory_hostname }}:9311
+            openstack endpoint create --region RegionOne key-manager admin http://{{ inventory_hostname }}:9311
+        fi
+      
+    - name: install openstack-barbican-api and dependencies
+      yum:
+        name: 
+          - openstack-barbican-api
+          - python-devel.x86_64
+          - python-pip
+          - gcc
+        state: present
+      environment: "{{ proxy_env | default({}) }}"
+
+    - name: create /etc/barbican/barbican.conf file
+      template:
+        src: templates/barbican.conf.j2
+        dest: /etc/barbican/barbican.conf
+    
+    - name: migrate barbican db
+      shell: barbican-manage db upgrade
+      become: yes
+      become_user: barbican
+
+    - name: pip install uwsgi
+      pip: name=uwsgi
+
+    - name: uwsgi startup barbican service
+      shell: |
+        ps -ef | grep -v grep | grep uwsgi
+        if [ $? -ne 0 ]; then
+          uwsgi --master --emperor /etc/barbican/vassals --daemonize /var/log/barbican.log
+        fi

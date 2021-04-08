@@ -16,12 +16,12 @@
           - name: BIGIP-15.0.1-0.0.11.qcow2
             url: http://10.250.11.185/images/BIGIP-15.0.1-0.0.11.qcow2
             dest: /root/BIGIP-15.0.1-0.0.11.qcow2
-          - name: BIGIP-15.1.2.1-0.0.10.ALL.qcow2
-            url: http://10.250.11.185/images/BIGIP-15.1.2.1-0.0.10.ALL.qcow2
-            dest: /root/BIGIP-15.1.2.1-0.0.10.ALL.qcow2
-          - name: BIGIP-14.1.4-0.0.11.ALL.qcow2
-            url: http://10.250.11.185/images/BIGIP-14.1.4-0.0.11.ALL.qcow2
-            dest: /root/BIGIP-14.1.4-0.0.11.ALL.qcow2
+          - name: BIGIP-15.1.2.1-0.0.10.qcow2
+            url: http://10.250.11.185/images/BIGIP-15.1.2.1-0.0.10.qcow2
+            dest: /root/BIGIP-15.1.2.1-0.0.10.qcow2
+          - name: BIGIP-14.1.4-0.0.11.qcow2
+            url: http://10.250.11.185/images/BIGIP-14.1.4-0.0.11.qcow2
+            dest: /root/BIGIP-14.1.4-0.0.11.qcow2
 
     # ansible-galaxy collection install openstack.cloud
     # error "To utilize this module, the installed version of the openstacksdk library MUST be >=0.12."

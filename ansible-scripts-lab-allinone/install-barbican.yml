@@ -1,5 +1,7 @@
 ---
 
+# TODO: setup barbican as a standalone system, i.e. in docker.
+
 - hosts: servers
   gather_facts: false
   remote_user: root

@@ -6,11 +6,11 @@
   gather_facts: false
   remote_user: root
   vars:
-    proxy_env:
-      http_proxy: http://10.250.64.100:3128
-      https_proxy: http://10.250.64.100:3128
-      HTTP_PROXY: http://10.250.64.100:3128
-      HTTPS_PROXY: http://10.250.64.100:3128
+    # proxy_env:
+    #   http_proxy: http://10.250.64.100:3128
+    #   https_proxy: http://10.250.64.100:3128
+    #   HTTP_PROXY: http://10.250.64.100:3128
+    #   HTTPS_PROXY: http://10.250.64.100:3128
   tasks:
     - name: test reachability
       ping:

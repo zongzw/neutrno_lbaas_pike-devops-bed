@@ -18,7 +18,7 @@
         source {{ openrc }} 
         neutron net-show net-vlan-{{ item }}
         if [ $? -ne 0 ]; then
-          neutron net-create --provider:network_type vlan --provider:physical_network vlannet --provider:segmentation_id {{ item }} net-vlan-{{ item }}
+          neutron net-create --shared --provider:network_type vlan --provider:physical_network vlannet --provider:segmentation_id {{ item }} net-vlan-{{ item }}
         fi
       with_items: "{{ vlans[inventory_hostname] }}"
 

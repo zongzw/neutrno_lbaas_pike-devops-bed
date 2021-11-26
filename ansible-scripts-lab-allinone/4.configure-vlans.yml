@@ -27,6 +27,6 @@
         source {{ openrc }} 
         neutron subnet-show subnet-vlan-{{ item }}
         if [ $? -ne 0 ]; then
-          neutron subnet-create --name subnet-vlan-{{ item }} net-vlan-{{ item }} 10.250.{{item}}.0/24
+          neutron subnet-create --name subnet-vlan-{{ item }} net-vlan-{{ item }} 10.250.{{item}}.0/24 --dns-nameserver 8.8.8.8
         fi
       with_items: "{{ vlans[inventory_hostname] }}"
